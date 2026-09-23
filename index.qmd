@@ -1,0 +1,167 @@
+---
+title: "EFSPI Upcoming Events"
+---
+
+```{r}
+#| echo: false
+#| warning: false
+todays_date <- substr(lubridate::today(), 1, 10)
+```
+
+**Updated: `r todays_date`**
+
+```{r}
+#| echo: false
+#| warning: false
+
+library(tidyverse)
+library(readxl)
+library(htmltools)
+
+events <- read_xlsx("Events.xlsx") |>
+  mutate(Date = as.Date(Date)) |> 
+  filter(Date > as.Date(todays_date))
+
+make_month_html <- function(yr, mo, evt) {
+  first     <- as.Date(sprintf("%d-%02d-01", yr, mo))
+  n_days    <- as.integer(lubridate::days_in_month(first))
+  start_dow <- lubridate::wday(first, week_start = 1)  # Mon=1 … Sun=7
+
+  header <- tags$h3(format(first, "%B %Y"),
+                    style = "margin-top:2rem")
+
+  dow_headers <- tags$tr(
+    lapply(c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"), \(d)
+      tags$th(d, style = "width:14.28%; text-align:center; padding:4px;
+                           background:#f0f0f0; border:1px solid #ddd;"))
+  )
+
+  cells <- c(
+    replicate(start_dow - 1,
+              tags$td(style = "border:1px solid #ddd;"),
+              simplify = FALSE),
+    lapply(seq_len(n_days), function(day) {
+      day_events <- evt[lubridate::day(evt$Date) == day, ]
+
+      event_html <- if (nrow(day_events) > 0) {
+        lapply(seq_len(nrow(day_events)), function(i) {
+          e <- day_events[i, ]
+          links <- tagList(
+            if (!is.na(e[["Agenda Link"]]) &&
+                nzchar(e[["Agenda Link"]]))
+              tags$a("Agenda", href = e[["Agenda Link"]],
+                     style = "font-size:0.7em; margin-right:4px;"),
+            if (!is.na(e[["Registration Link"]]) &&
+                nzchar(e[["Registration Link"]]))
+              tags$a("Reg", href = e[["Registration Link"]],
+                     style = "font-size:0.7em;")
+          )
+          tags$div(
+            tags$strong(e[["Title"]], style = "font-size:0.8em;"),
+            tags$br(), links,
+            style = "background:#ddeeff; border-radius:3px;
+                     padding:2px 4px;
+                     margin-bottom:2px;"
+          )
+        })
+      } else NULL
+
+      tags$td(
+        tags$div(day, style = "font-size:0.75em; color:#888;
+                               text-align:right;"),
+        tagList(event_html),
+        style = "border:1px solid #ddd; vertical-align:top; padding:4px;
+                 min-height:60px; width:14.28%;"
+      )
+    })
+  )
+
+  rows <- list()
+  while (length(cells) > 0) {
+    chunk <- cells[seq_len(min(7, length(cells)))]
+    cells <- cells[-seq_len(min(7, length(cells)))]
+    if (length(chunk) < 7)
+      chunk <- c(chunk, replicate(7 - length(chunk),
+                   tags$td(style = "border:1px solid #ddd;"),
+                   simplify = FALSE))
+    rows <- c(rows, list(tags$tr(tagList(chunk))))
+  }
+
+  tagList(
+    header,
+    tags$table(
+      tags$thead(dow_headers),
+      tags$tbody(tagList(rows)),
+      style = "width:100%; border-collapse:collapse; table-layout:fixed;"
+    )
+  )
+}
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| results: asis
+
+events_sorted <- events |> arrange(Date)
+
+event_items <- lapply(
+  seq_len(nrow(events_sorted)),
+  function(i) {
+    e <- events_sorted[i, ]
+    
+    meta_parts <- c(
+      format(e$Date, "%d %B %Y"),
+      if (!is.na(e$Organization) && nzchar(e$Organization))
+        e$Organization,
+      if (!is.na(e$Location) && nzchar(e$Location))
+        e$Location,
+      if (!is.na(e$Time) && nzchar(e$Time))
+        e$Time,
+      if (!is.na(e$Fee) && nzchar(as.character(e$Fee)))
+        paste0("Fee: ", e$Fee)
+    )
+
+    links <- tagList(
+      if (!is.na(e[["Agenda Link"]]) && nzchar(e[["Agenda Link"]]))
+        tags$a("Agenda", href = e[["Agenda Link"]],
+               style = "margin-right:8px;"),
+      if (!is.na(e[["Registration Link"]]) &&
+          nzchar(e[["Registration Link"]]))
+        tags$a("Registration", href = e[["Registration Link"]])
+    )
+    
+    tags$li(
+      tags$strong(e$Title),
+      tags$br(),
+      tags$span(paste(meta_parts, collapse = " · "),
+                style = "color:#555; font-size:0.9em;"),
+      tags$br(),
+      links,
+      style = "margin-bottom:0.8em;"
+    )
+  })
+
+htmltools::tags$ul(tagList(event_items),
+                   style = "list-style:none; padding-left:0;")
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| results: asis
+
+months_with_events <- events |>
+  mutate(yr = lubridate::year(Date), mo = lubridate::month(Date)) |>
+  distinct(yr, mo) |>
+  arrange(yr, mo)
+
+cal_html <- purrr::pmap(months_with_events, function(yr, mo) {
+  month_events <- events |>
+    filter(lubridate::year(Date) == yr,
+           lubridate::month(Date) == mo)
+  make_month_html(yr, mo, month_events)
+})
+
+htmltools::tagList(cal_html)
+```

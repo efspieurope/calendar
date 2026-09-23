@@ -1,0 +1,5 @@
+/* css styles */
+
+table { font-family: sans-serif; }
+td a { color: #0066cc; text-decoration: none; }
+td a:hover { text-decoration: underline; }
